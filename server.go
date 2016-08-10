@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"bytes"
 	"time"
+	"os"
 	"github.com/jtisler/directa/crc16"
 	"github.com/mikespook/gearman-go/worker"
 )
@@ -29,6 +30,8 @@ func handleConnection(port string) (net.Conn, error) {
 	}
 
 	conn, _ := ln.Accept() //accept first (and only) device that connects
+
+	log.Print("New connection from " + conn.RemoteAddr().String())
 
 	if err := ln.Close(); err != nil { //check errors
 		log.Fatal(err.Error())
@@ -112,6 +115,12 @@ func Anviz(job worker.Job) ([]byte, error){
 
 
 func main(){
+	f, _ := os.OpenFile("/var/log/directa.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+
+	defer f.Close()
+
+	log.SetOutput(f)
+
 	w := worker.New(worker.Unlimited) //initialize new worker
 	defer w.Close() //defer worker close
 
