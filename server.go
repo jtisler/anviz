@@ -9,16 +9,14 @@ import (
 	"bytes"
 	"time"
 	"os"
-	"github.com/jtisler/directa/crc16"
 	"github.com/mikespook/gearman-go/worker"
 )
 
 type jsonReq struct {
 	Id int
 	Port string
-	Command string
-	Data string
-	Length int
+	Command []string
+	Type int
 }
 
 func handleConnection(port string) (net.Conn, error) {
@@ -30,6 +28,7 @@ func handleConnection(port string) (net.Conn, error) {
 	}
 
 	conn, _ := ln.Accept() //accept first (and only) device that connects
+
 
 	log.Print("New connection from " + conn.RemoteAddr().String())
 
@@ -53,49 +52,71 @@ func handleConnection(port string) (net.Conn, error) {
 */
 
 
-func buildRequest(id int, command string, data string, length int) []byte {
-	sReq := "a5" //always start with 15
-	sReq = fmt.Sprintf("%s%08d%02s%04X%s", sReq, id, command, length, data) //concat params
-
-	bReq, _ := hex.DecodeString(sReq) //convert hex string to []byte
-	sCrc_16 := crc16.Crc16(bReq) //calculate crc_16
-
-	sReq = fmt.Sprintf("%s%s", sReq, sCrc_16) //concat request and crc_16
-
-	bReq, _ = hex.DecodeString(sReq) //convert hex string to []byte
-
-	return bReq
-}
-
 func parseResponse(response []byte) string{
 	sResponse := fmt.Sprintf("%X", response) //convert []byte to hex string
 
 	return sResponse
 }
 
-func executeCommand(conn net.Conn, id int, command string, data string, length int) string {
+func executeSingle(conn net.Conn, command []string) ([]byte, error) {
+	request, _ := hex.DecodeString(command[0])
 
-	request := buildRequest(id, command, data, length) //build request
 	conn.Write(request) //send request to device
 
-	response := make([]byte, 2048) //reserve 2048 byte buffer for read
+	response := make([]byte, 4096) //reserve 4096 byte buffer for read
+
 	_, err := conn.Read(response) //get response from device
 
 	if err != nil { //check errors
 		log.Fatal(err.Error())
-		return err.Error()
+	 	return nil, err
 	}
 
 	response = bytes.Trim(response, "\x00") //trim trailing zeroes
-	sResponse := parseResponse(response) //parse response
 
-	return sResponse
+	pResponse := parseResponse(response)
+
+	return []byte(pResponse), nil
+}
+
+func executeMulti(conn net.Conn, command []string) ([]byte, error) {
+
+	var sResponse = make([]string, len(command))
+
+	for v := range command {
+		request, _ := hex.DecodeString(command[v])
+
+		conn.Write(request) //send request to device
+
+		response := make([]byte, 4096) //reserve 4096 byte buffer for read
+
+		_, err := conn.Read(response) //get response from device
+
+		if err != nil { //check errors
+			log.Fatal(err.Error())
+			return nil, err
+		}
+
+		response = bytes.Trim(response, "\x00") //trim trailing zeroes
+
+		pResponse := parseResponse(response)
+
+		response = make([]byte, 4096)
+
+		sResponse[v] = pResponse //parse response
+	}
+
+	jResponse, _ := json.Marshal(sResponse)
+
+	return jResponse, nil
 }
 
 func Anviz(job worker.Job) ([]byte, error){
 	var req jsonReq //new json request
 
 	json.Unmarshal(job.Data(), &req) //unmarshal data and map it to request variable
+
+	fmt.Println(req)
 
 	conn, err := handleConnection(req.Port) //create connection
 
@@ -106,11 +127,15 @@ func Anviz(job worker.Job) ([]byte, error){
 		return nil, err
 	}
 
-	var response string //initialize response variable
+	var response []byte //initialize response variable
 
-	response = executeCommand(conn, req.Id, req.Command, req.Data, req.Length) //call execute command
+	if req.Type == 1 {
+		response, _ = executeMulti(conn, req.Command) //call execute command
+	} else {
+		response, _ = executeSingle(conn, req.Command)
+	}
 
-	return []byte(response), nil //and return it's response
+	return response, nil //and return it's response
 }
 
 
