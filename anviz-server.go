@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"encoding/hex"
 	"bytes"
-	"time"
+//	"time"
 	"os"
 	"github.com/mikespook/gearman-go/worker"
 )
@@ -21,6 +21,7 @@ type jsonReq struct {
 
 func handleConnection(port string) (net.Conn, error) {
 	ln, err := net.Listen("tcp", port) //start listening od desired port
+
 
 	if err != nil { //check errors
 		log.Fatal(err.Error())
@@ -37,7 +38,6 @@ func handleConnection(port string) (net.Conn, error) {
 		return nil, err
 	}
 
-	conn.SetDeadline(time.Now().Add(15 * time.Second)) //set connection read-write timeout
 
 	return conn, nil
 }
