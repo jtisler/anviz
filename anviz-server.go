@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"encoding/hex"
 	"bytes"
-//	"time"
+	"time"
 	"os"
 	"github.com/mikespook/gearman-go/worker"
+	"strconv"
 )
 
 type jsonReq struct {
@@ -20,16 +21,26 @@ type jsonReq struct {
 }
 
 func handleConnection(port string) (net.Conn, error) {
-	ln, err := net.Listen("tcp", port) //start listening od desired port
 
+	portFixed, _ := strconv.Atoi(port[1:])
+
+	ln, err := net.ListenTCP("tcp", &net.TCPAddr{
+		//IP: net.IPv4(0,0,0,0),
+		Port: portFixed,
+	}) //start listening od desired port
 
 	if err != nil { //check errors
 		log.Fatal(err.Error())
 		return nil, err
 	}
 
-	conn, _ := ln.Accept() //accept first (and only) device that connects
+	ln.SetDeadline(time.Now().Add( 5 * time.Second ))
 
+	conn, connErr := ln.Accept() //accept first (and only) device that connects
+
+	if connErr, ok := connErr.(net.Error); ok && connErr.Timeout() {
+  		return nil, connErr
+	}
 
 	log.Print("New connection from " + conn.RemoteAddr().String())
 
@@ -118,12 +129,15 @@ func Anviz(job worker.Job) ([]byte, error){
 
 	conn, err := handleConnection(req.Port) //create connection
 
-	defer conn.Close() //defer connection close
-
 	if err != nil { //if error while establishing connection get stop job
-		log.Fatal(err.Error())
-		return nil, err
+		//log.Fatal(err.Error())
+		return []byte(err.Error()), nil
 	}
+
+	defer conn.Close();
+
+	fmt.Println("connection established")
+
 
 	var response []byte //initialize response variable
 
